@@ -1,11 +1,20 @@
 import "/src/assets/style.scss";
 import * as THREE from 'three';
 
+const lerp = (start, end, t) => {
+  return start * (1 - t) + end * t;
+}
+
 class Sketch {
   constructor() {
     this.body = document.querySelector('body');
     this.images = [...document.querySelectorAll('img')];
     this.meshItems = [];
+
+    this.scrollable = document.querySelector('.smooth-scroll');
+    this.current = 0;
+    this.target = 0;
+    this.easy = 0.065;
 
     this.createScene();
     this.createCamera();
@@ -20,6 +29,12 @@ class Sketch {
     const aspectRatio = width / height;
 
     return { width, height, aspectRatio };
+  }
+
+  smoothScroll() {
+    this.target = window.scrollY;
+    this.current = lerp(this.current, this.target, this.easy);
+    this.scrollable.style.transform = `translate3d(0, ${-this.current}px, 0)`;
   }
 
   createScene() {
@@ -41,9 +56,15 @@ class Sketch {
 
       this.meshItems.push(meshItem);
     })
+
+    // update height
+    document.body.style.height = `${this.scrollable.getBoundingClientRect().height}px`;
   }
 
   onWindowResize() {
+    // update height
+    document.body.style.height = `${this.scrollable.getBoundingClientRect().height}px`;
+
     this.camera.aspect = this.viewport.aspectRatio;
 
     this.createCamera();
@@ -63,6 +84,8 @@ class Sketch {
   }
 
   render() {
+    this.smoothScroll();
+
     for (let i = 0; i < this.meshItems.length; i++) {
       this.meshItems[i].render();
     }
@@ -94,7 +117,25 @@ class MeshItem{
 
   createMesh() {
     const geometry = new THREE.PlaneGeometry(1, 1, 10, 10);
-    const material = new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: true });
+
+    const imageTexture = new THREE.TextureLoader().load(this.element.src);
+    imageTexture.minFilter = THREE.LinearFilter;
+
+    this.uniforms = {
+      uTexture: { value: imageTexture },
+      uOffset: { value: new THREE.Vector2(0.0, 0.0) },
+      uAlpha: { value: 1.0 },
+      u_mouse: { type: "v2", value: new THREE.Vector2() },
+      u_time: { type: "f", value: 0.0 },
+    };
+
+  const material = new THREE.ShaderMaterial({
+    uniforms: this.uniforms,
+    vertexShader: vertex,
+    fragmentShader: fragment,
+    transparent: true,
+    side: THREE.DoubleSide
+  })
 
     this.mesh = new THREE.Mesh(geometry, material);
     this.scene.add(this.mesh);
