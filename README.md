@@ -1,1 +1,1 @@
-![ ](./WebGL Three.js Demo.gif?raw=true " ")
+![ ](./index.gif?raw=true "WebGL Three.js Demo")
