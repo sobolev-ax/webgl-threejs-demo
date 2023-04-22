@@ -1,5 +1,7 @@
 import "/src/assets/style.scss";
 import * as THREE from 'three';
+import vertex from './glsl/vertex.glsl';
+import fragment from './glsl/fragment.glsl';
 
 const lerp = (start, end, t) => {
   return start * (1 - t) + end * t;
@@ -9,12 +11,21 @@ class Sketch {
   constructor() {
     this.body = document.querySelector('body');
     this.images = [...document.querySelectorAll('img')];
-    this.meshItems = [];
 
     this.scrollable = document.querySelector('.smooth-scroll');
     this.current = 0;
     this.target = 0;
     this.easy = 0.065;
+
+    this.meshItems = [];
+    this.planeItems = [];
+
+    this.mouseCoordinates = new THREE.Vector2();
+    this.raycaster = new THREE.Raycaster();
+    this.selectMesh = null;
+
+    this.onMouse();
+    this.onTouchMove();
 
     this.createScene();
     this.createCamera();
@@ -29,6 +40,40 @@ class Sketch {
     const aspectRatio = width / height;
 
     return { width, height, aspectRatio };
+  }
+
+  onTouchMove() {
+    document.addEventListener("touchmove", (event) => {
+      const x = (event?.touches[0].clientX / window.innerWidth) * 2 - 1;
+      const y = (event?.touches[0].clientY / window.innerHeight) * 2 + 1;
+
+      this.mouseCoordinates = { x, y: window.innerWidth > 450 ? y : 0. };
+    })
+  }
+
+  onMouse() {
+    document.addEventListener("mousemove", (event) => {
+      const x = (event.clientX / window.innerWidth) * 2 - 1;
+      const y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+      this.mouseCoordinates = { x, y };
+    })
+  }
+
+  imageLoaded(url) {
+    return new Promise(function (resolve, reject) {
+      var img = new Image();
+
+      img.onload = function () {
+        resolve(url);
+      }
+
+      img.onerror = function () {
+        reject(url);
+      }
+
+      img.src = url;
+    })
   }
 
   smoothScroll() {
@@ -51,14 +96,23 @@ class Sketch {
   }
 
   createMesh() {
-    this.images.map((image) => {
-      const meshItem = new MeshItem(image, this.scene);
-
-      this.meshItems.push(meshItem);
+    const imagesLoaded = this.images.map((image) => {
+        const meshItem = new MeshItem(image, this.scene);
+        this.meshItems.push(meshItem);
+        return this.imageLoaded(image.src);
     })
 
-    // update height
-    document.body.style.height = `${this.scrollable.getBoundingClientRect().height}px`;
+
+    Promise.all(imagesLoaded).then(() => {
+        document.body.style.height = `${this.scrollable.getBoundingClientRect().height}px`;
+    })
+
+
+    this.scene.traverse((item) => {
+        if (item.isMesh) {
+            this.planeItems.push(item);
+        }
+    })
   }
 
   onWindowResize() {
@@ -86,8 +140,20 @@ class Sketch {
   render() {
     this.smoothScroll();
 
+    this.raycaster.setFromCamera(this.mouseCoordinates, this.camera);
+    const intersects = this.raycaster.intersectObjects(this.planeItems, true);
+    if (intersects.length > 0) {
+        this.selectMesh = intersects[0].object;
+    } else {
+        if (this.selectMesh !== null) {
+            this.selectMesh = null;
+        }
+    }
+
+    const velocity = (this.target - this.current);
+
     for (let i = 0; i < this.meshItems.length; i++) {
-      this.meshItems[i].render();
+        this.meshItems[i].render(velocity, this.mouseCoordinates, this.selectMesh);
     }
 
     this.renderer.render(this.scene, this.camera);
@@ -141,12 +207,25 @@ class MeshItem{
     this.scene.add(this.mesh);
   }
 
-  render() {
+  render(velocity = 0, mouseCoordinates, selectMesh) {
     this.updateDimensions();
-
     this.mesh.position.set(this.offset.x, this.offset.y, 0);
     this.mesh.scale.set(this.sizes.x, this.sizes.y, 1);
-  }
+
+
+    this.uniforms.uOffset.value.set(this.offset.x * 0.5, -(velocity) * 0.0003);
+
+
+    if (this.mesh.uuid === selectMesh?.uuid) {
+        this.uniforms.u_mouse.value.x = lerp(0.0, mouseCoordinates.x, 0.6);
+        this.uniforms.u_mouse.value.y = lerp(0.0, mouseCoordinates.y, 0.6);
+        this.uniforms.u_time.value += 0.05;
+        return;
+    }
+    this.uniforms.u_mouse.value.x = lerp(this.uniforms.u_mouse.value.x, 0.0, 0.02);
+    this.uniforms.u_mouse.value.y = lerp(this.uniforms.u_mouse.value.y, 0.0, 0.02);
+    this.uniforms.u_time.value = lerp(this.uniforms.u_time.value, 0.0, 0.02);
+}
 }
 
 new Sketch();
